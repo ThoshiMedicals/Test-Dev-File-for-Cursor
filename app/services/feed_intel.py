@@ -22,7 +22,7 @@ async def _engagement_map(db: AsyncSession, *, hours: int) -> dict[str, dict[str
                 func.coalesce(func.sum(UserEvent.value), 0.0),
             )
             .where(UserEvent.created_at >= since)
-            .where(UserEvent.event_type.in_(["click", "share", "dwell", "comment"]))
+            .where(UserEvent.event_type.in_(["click", "share", "dwell", "comment", "view", "like", "save"]))
             .group_by(UserEvent.article_id, UserEvent.event_type)
         )
     ).all()
@@ -31,7 +31,7 @@ async def _engagement_map(db: AsyncSession, *, hours: int) -> dict[str, dict[str
     for aid, et, cnt, val_sum in rows:
         key = str(aid)
         if key not in m:
-            m[key] = {"click": 0.0, "share": 0.0, "dwell": 0.0, "comment": 0.0}
+            m[key] = {"click": 0.0, "share": 0.0, "dwell": 0.0, "comment": 0.0, "view": 0.0, "like": 0.0, "save": 0.0}
         if et == "click":
             m[key]["click"] += float(cnt or 0)
         elif et == "share":
@@ -40,13 +40,25 @@ async def _engagement_map(db: AsyncSession, *, hours: int) -> dict[str, dict[str
             m[key]["dwell"] += float(val_sum or 0.0) + 0.1 * float(cnt or 0)
         elif et == "comment":
             m[key]["comment"] += float(cnt or 0)
+        elif et == "view":
+            m[key]["view"] += float(cnt or 0)
+        elif et == "like":
+            m[key]["like"] += float(cnt or 0)
+        elif et == "save":
+            m[key]["save"] += float(cnt or 0)
     return m
 
 
 async def engagement_hotness(db: AsyncSession, *, hours: int = 24) -> dict[str, float]:
     em = await _engagement_map(db, hours=hours)
     return {
-        aid: e["click"] + 3.0 * e["share"] + 0.02 * e["dwell"] + 2.0 * e["comment"]
+        aid: e["click"]
+        + 3.0 * e["share"]
+        + 0.02 * e["dwell"]
+        + 2.0 * e["comment"]
+        + 0.12 * e["view"]
+        + 2.0 * e["like"]
+        + 2.2 * e["save"]
         for aid, e in em.items()
     }
 
@@ -56,8 +68,11 @@ def _trending_score(eng: dict[str, float], hours_since_publish: float) -> float:
     shares = eng.get("share", 0.0) * 3.0
     dwell = eng.get("dwell", 0.0) * 0.02
     comments = eng.get("comment", 0.0) * 2.0
+    views = eng.get("view", 0.0) * 0.15
+    likes = eng.get("like", 0.0) * 2.0
+    saves = eng.get("save", 0.0) * 2.2
     recency = 1.0 / (1.0 + max(0.0, hours_since_publish) / 12.0)
-    return (clicks + shares + dwell + comments + 0.01) * recency
+    return (clicks + shares + dwell + comments + views + likes + saves + 0.01) * recency
 
 
 async def trending_articles(db: AsyncSession, *, limit: int = 20) -> list[dict]:
@@ -102,7 +117,15 @@ async def breaking_articles(db: AsyncSession, *, limit: int = 15) -> list[dict]:
     scored: list[tuple[float, Article]] = []
     for a in rows:
         e = eng.get(str(a.id), {})
-        burst = e.get("click", 0.0) + e.get("share", 0.0) * 4.0
+        burst = (
+            e.get("click", 0.0)
+            + e.get("share", 0.0) * 4.0
+            + 0.1 * e.get("view", 0.0)
+            + 2.0 * e.get("like", 0.0)
+            + 2.0 * e.get("save", 0.0)
+            + 0.02 * e.get("dwell", 0.0)
+            + 2.5 * e.get("comment", 0.0)
+        )
         hp = 999.0
         if a.published_at:
             pt = a.published_at if a.published_at.tzinfo else a.published_at.replace(tzinfo=timezone.utc)

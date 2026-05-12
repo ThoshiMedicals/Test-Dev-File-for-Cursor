@@ -9,13 +9,23 @@ from app.core.db import SessionLocal
 from app.schemas.fetched_article import FetchedArticle
 from app.services.currents_api import fetch_currents_latest
 from app.services.live_news_ingest import ingest_fetched_articles
-from app.services.newsapi import fetch_top_headlines
+from app.services.newsapi import NewsAPIError, fetch_top_headlines
 
 
 @shared_task(name="news.sync_newsapi_headlines")
 def sync_newsapi_headlines(country: str | None = None) -> dict:
     async def _run() -> dict:
-        items = await fetch_top_headlines(country=country)
+        try:
+            items = await fetch_top_headlines(country=country)
+        except NewsAPIError as e:
+            return {
+                "fetched": 0,
+                "created": 0,
+                "provider": "newsapi",
+                "error": str(e),
+                "api_code": e.api_code,
+                "http_status": e.http_status,
+            }
         async with SessionLocal() as db:
             return await ingest_fetched_articles(db, items)
 
@@ -44,6 +54,8 @@ def sync_all_live_news(country: str | None = None) -> dict:
             try:
                 for it in await fetch_top_headlines(country=country):
                     merged[it.url] = it
+            except NewsAPIError as e:
+                errors.append(f"newsapi:{e!s} (code={e.api_code}, http={e.http_status})")
             except Exception as e:  # noqa: BLE001
                 errors.append(f"newsapi:{e!s}")
 

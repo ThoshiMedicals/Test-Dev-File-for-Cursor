@@ -2,23 +2,29 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import auth_dep, db_dep
+from app.core.db import SessionLocal
+from app.core.logging import logger
 from app.models.notification import UserNotification
 from app.models.user import User, UserEvent
-from app.services.recs import apply_bandit_reward, recommend_for_user
 from app.schemas.common import Envelope
 from app.schemas.user import (
+    FCMRegisterIn,
     NotificationCreateIn,
     NotificationOut,
     RecommendationsOut,
     UserEventIn,
     UserOut,
+    UserPreferencesPatch,
     UserUpsertIn,
 )
+from app.services.recs import apply_bandit_reward, recommend_for_user
+from app.services.user_push import send_push_for_notification
+from app.utils.dict_merge import deep_merge
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
 
@@ -67,7 +73,7 @@ async def post_events(external_id: str, events: list[UserEventIn], db: AsyncSess
             )
         )
         # Update bandit on explicit engagement events if the client passes arm name in meta.
-        if e.event_type in ("click", "save", "share"):
+        if e.event_type in ("click", "save", "share", "like"):
             await apply_bandit_reward(
                 db,
                 user_external_id=external_id,
@@ -110,6 +116,7 @@ async def list_notifications(
 async def create_notification(
     external_id: str,
     payload: NotificationCreateIn,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(db_dep),
 ) -> Envelope[NotificationOut]:
     prefs = (await db.execute(select(User).where(User.external_id == external_id))).scalar_one_or_none()
@@ -118,6 +125,8 @@ async def create_notification(
     notif_prefs = (prefs.preferences or {}).get("notifications") or {}
     if notif_prefs.get("enabled") is False:
         raise HTTPException(status_code=400, detail="Notifications disabled for this user.")
+    if payload.severity == "breaking" and notif_prefs.get("breaking") is False:
+        raise HTTPException(status_code=400, detail="Breaking push disabled for this user.")
     topics = notif_prefs.get("topics") or []
     if topics and payload.topic_slug and payload.topic_slug not in topics:
         raise HTTPException(status_code=400, detail="Topic not in user subscription list.")
@@ -133,7 +142,24 @@ async def create_notification(
     db.add(n)
     await db.commit()
     await db.refresh(n)
-    return Envelope(data=_to_notification_out(n))
+    out = _to_notification_out(n)
+
+    async def _push() -> None:
+        try:
+            async with SessionLocal() as session:
+                await send_push_for_notification(
+                    session,
+                    user_external_id=external_id,
+                    title=payload.title,
+                    body=payload.body,
+                    article_id=payload.article_id,
+                    topic_slug=payload.topic_slug,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("push_background_failed", error=str(e), user=external_id)
+
+    background_tasks.add_task(_push)
+    return Envelope(data=out)
 
 
 @router.patch("/{external_id}/notifications/{notification_id}/read", response_model=Envelope[NotificationOut], dependencies=[Depends(auth_dep)])
@@ -153,6 +179,47 @@ async def mark_notification_read(
     await db.commit()
     await db.refresh(n)
     return Envelope(data=_to_notification_out(n))
+
+
+@router.patch("/{external_id}/preferences", response_model=Envelope[UserOut], dependencies=[Depends(auth_dep)])
+async def patch_user_preferences(
+    external_id: str,
+    payload: UserPreferencesPatch,
+    db: AsyncSession = Depends(db_dep),
+) -> Envelope[UserOut]:
+    user = (await db.execute(select(User).where(User.external_id == external_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    patch = payload.model_dump(exclude_unset=True)
+    if "notifications" in patch and isinstance(patch["notifications"], dict):
+        patch["notifications"] = {k: v for k, v in patch["notifications"].items() if v is not None}
+    user.preferences = deep_merge(user.preferences or {}, patch)
+    sp = (user.preferences or {}).get("sentiment_preference")
+    if isinstance(sp, str):
+        x = sp.strip().lower()
+        user.tone_preference = None if x in ("any", "all", "mixed", "") else (x if x in ("positive", "neutral", "negative", "positive_or_neutral") else user.tone_preference)
+    await db.commit()
+    await db.refresh(user)
+    return Envelope(data=_to_user_out(user))
+
+
+@router.post("/{external_id}/devices/fcm", response_model=Envelope[dict], dependencies=[Depends(auth_dep)])
+async def register_fcm_token(
+    external_id: str,
+    payload: FCMRegisterIn,
+    db: AsyncSession = Depends(db_dep),
+) -> Envelope[dict]:
+    user = (await db.execute(select(User).where(User.external_id == external_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    prefs = dict(user.preferences or {})
+    device = dict(prefs.get("device") or {})
+    device["fcm_token"] = payload.token.strip()
+    device["platform"] = (payload.platform or "web").strip()[:32]
+    prefs["device"] = device
+    user.preferences = prefs
+    await db.commit()
+    return Envelope(data={"registered": True, "platform": device["platform"]})
 
 
 @router.get("/{external_id}/export", response_model=Envelope[dict], dependencies=[Depends(auth_dep)])

@@ -7,18 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import auth_dep, db_dep
-from app.core.config import settings
 from app.schemas.common import Envelope, EnvelopeMeta
 from app.services.feed_intel import breaking_articles, feed_since, trending_articles
+from app.services.http_cache import set_private_json_cache, set_public_json_cache
 from app.services.recs import recommend_for_user
 
 router = APIRouter(prefix="/v1/feed", tags=["feed"])
-
-
-def _cache(response: Response) -> None:
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.api_cache_control_seconds}, stale-while-revalidate=120"
-    )
 
 
 @router.get("/personalized", response_model=Envelope[list[dict]], dependencies=[Depends(auth_dep)])
@@ -30,7 +24,7 @@ async def personalized_feed(
     db: AsyncSession = Depends(db_dep),
 ) -> Envelope[list[dict]]:
     items, versions = await recommend_for_user(db, user_external_id=user_external_id, limit=limit)
-    _cache(response)
+    set_private_json_cache(response)
     return Envelope(data=items, meta=EnvelopeMeta(next_cursor=cursor, model_versions=versions))
 
 
@@ -48,7 +42,7 @@ async def feed_updates(
         except (ValueError, TypeError) as e:
             raise HTTPException(status_code=400, detail="Invalid `since` ISO-8601 datetime.") from e
     data = await feed_since(db, since=since_dt, limit=limit)
-    _cache(response)
+    set_public_json_cache(response)
     return Envelope(data=data, meta=EnvelopeMeta(next_cursor=None, model_versions={}))
 
 
@@ -59,7 +53,7 @@ async def feed_trending(
     db: AsyncSession = Depends(db_dep),
 ) -> Envelope[list[dict]]:
     data = await trending_articles(db, limit=limit)
-    _cache(response)
+    set_public_json_cache(response)
     return Envelope(data=data, meta=EnvelopeMeta(model_versions={"ranking": "engagement_v1"}))
 
 
@@ -70,5 +64,5 @@ async def feed_breaking(
     db: AsyncSession = Depends(db_dep),
 ) -> Envelope[list[dict]]:
     data = await breaking_articles(db, limit=limit)
-    _cache(response)
+    set_public_json_cache(response)
     return Envelope(data=data, meta=EnvelopeMeta(model_versions={"ranking": "burst_v1"}))

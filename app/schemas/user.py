@@ -3,7 +3,33 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class NotificationPrefsPatch(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool | None = None
+    push_enabled: bool | None = None
+    breaking: bool | None = None
+    topics: list[str] | None = None
+
+
+class UserPreferencesPatch(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    notifications: NotificationPrefsPatch | None = None
+    preferred_categories: list[str] | None = Field(default=None, description="Category slugs to boost in recommendations.")
+    content_view: str | None = Field(default=None, description="summary or full")
+    sentiment_preference: str | None = Field(
+        default=None,
+        description="positive | neutral | negative | positive_or_neutral | any",
+    )
+
+
+class FCMRegisterIn(BaseModel):
+    token: str = Field(..., min_length=10, max_length=4096)
+    platform: str | None = Field(default="web", max_length=32)
 
 
 class UserUpsertIn(BaseModel):

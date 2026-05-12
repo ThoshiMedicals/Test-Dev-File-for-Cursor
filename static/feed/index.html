@@ -49,6 +49,7 @@
     <select id="viewMode"><option value="summary">Summaries</option><option value="full">Full text</option></select>
     <button class="primary" type="button" id="btnLoad">Load</button>
     <button type="button" id="btnNotif">Refresh alerts</button>
+    <a href="/profile" style="color:var(--accent);font-size:.9rem;margin-left:.25rem;">Preferences</a>
   </header>
   <main>
     <div class="tabs" id="tabs"></div>
@@ -70,6 +71,25 @@
     let activeTab = "live";
     let latestCursor = null;
     let latestLoading = false;
+    const viewedIds = new Set();
+
+    function observeCardViews(uid) {
+      if (!uid) return;
+      document.querySelectorAll("article.card[data-id]").forEach((card) => {
+        const id = card.getAttribute("data-id");
+        if (!id || viewedIds.has(id)) return;
+        const io = new IntersectionObserver(async (entries) => {
+          if (!entries[0] || !entries[0].isIntersecting) return;
+          io.disconnect();
+          if (viewedIds.has(id)) return;
+          viewedIds.add(id);
+          try {
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "view", meta: { source: "feed_impression" } }]);
+          } catch (_) {}
+        }, { threshold: 0.35, rootMargin: "40px" });
+        io.observe(card);
+      });
+    }
 
     function apiBase() {
       const m = document.querySelector('meta[name="api-base"]')?.getAttribute("content")?.trim() || "";
@@ -144,6 +164,7 @@
           <div class="actions">
             <button type="button" data-dwell="${id}">Open article</button>
             <button type="button" data-save="${id}">Save</button>
+            <button type="button" data-like="${id}">Like</button>
             <button type="button" data-related="${id}">People also read…</button>
             ${shareBtns}
           </div>
@@ -198,6 +219,16 @@
           } catch (e) { toast(String(e.message || e)); }
           return;
         }
+        const like = t.closest("[data-like]");
+        if (like) {
+          const id = like.getAttribute("data-like");
+          if (!uid || !id) { toast("Set user id to track engagement."); return; }
+          try {
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "like", meta: {} }]);
+            toast("Thanks!");
+          } catch (e) { toast(String(e.message || e)); }
+          return;
+        }
         const rel = t.closest("[data-related]");
         if (rel) {
           const id = rel.getAttribute("data-related");
@@ -206,7 +237,7 @@
           if (!box) return;
           box.classList.add("on");
           box.textContent = "Loading…";
-            try {
+          try {
             const j = await apiGet("/v1/articles/" + id + "/related?limit=5");
             const rows = j.data || [];
             if (!rows.length) { box.innerHTML = "<em>No collaborative signal yet — read and save more articles.</em>"; return; }
@@ -235,6 +266,7 @@
       const uid = document.getElementById("userId").value.trim();
       latestCursor = null;
       latestLoading = false;
+      viewedIds.clear();
       try {
         let items = [];
         const tab = TAB_DEFS.find((t) => t.id === activeTab);
@@ -278,6 +310,7 @@
           ? items.map(cardHtml).join("")
           : "<p>No articles yet. Run NewsAPI / Currents sync from the API.</p>";
         wireGrid(uid);
+        observeCardViews(uid);
       } catch (e) {
         toast(String(e.message || e));
       }
@@ -297,6 +330,7 @@
       } finally {
         latestLoading = false;
         wireGrid(uid);
+        observeCardViews(uid);
       }
     }
 

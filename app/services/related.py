@@ -29,13 +29,13 @@ async def related_by_co_engagement(
         FROM user_events e
         WHERE e.created_at >= :since
           AND e.article_id <> :seed
-          AND e.event_type IN ('click', 'save', 'share', 'dwell')
+          AND e.event_type IN ('click', 'save', 'share', 'dwell', 'view', 'like', 'comment')
           AND e.user_external_id IN (
             SELECT DISTINCT user_external_id
             FROM user_events
             WHERE article_id = :seed
               AND created_at >= :since
-              AND event_type IN ('click', 'save', 'share', 'dwell')
+              AND event_type IN ('click', 'save', 'share', 'dwell', 'view', 'like', 'comment')
           )
         GROUP BY e.article_id
         ORDER BY cnt DESC

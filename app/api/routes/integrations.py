@@ -8,13 +8,18 @@ from app.api.deps import auth_dep
 from app.core.config import settings
 from app.schemas.common import Envelope
 from app.services.currents_api import currents_status
-from app.services.newsapi import newsapi_status
+from app.services.newsapi import newsapi_status, validate_news_api_key
 
 router = APIRouter(prefix="/v1/integrations", tags=["integrations"])
 
 
 class NewsSyncIn(BaseModel):
     country: str | None = Field(default=None, max_length=8)
+
+
+@router.get("/news/validate", response_model=Envelope[dict], dependencies=[Depends(auth_dep)])
+async def news_validate() -> Envelope[dict]:
+    return Envelope(data=await validate_news_api_key())
 
 
 @router.get("/news/status", response_model=Envelope[dict], dependencies=[Depends(auth_dep)])

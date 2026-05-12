@@ -8,6 +8,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.users import router as users_router
 from app.api.routes.waitlist import router as waitlist_router
 
+from app.api.routes.analytics import router as analytics_router
 from app.api.routes.integrations import router as integrations_router
 from app.api.routes.legal import router as legal_router
 
@@ -18,5 +19,6 @@ api_router.include_router(articles_router)
 api_router.include_router(users_router)
 api_router.include_router(feed_router)
 api_router.include_router(waitlist_router)
+api_router.include_router(analytics_router)
 api_router.include_router(integrations_router)
 

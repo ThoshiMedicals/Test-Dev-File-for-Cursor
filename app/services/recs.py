@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import numpy as np
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.models.article import Article
@@ -39,6 +40,26 @@ def _age_hours(dt: datetime | None) -> float:
 
 def _recency_score(hours: float) -> float:
     return float(math.exp(-hours / 24.0))
+
+
+def effective_tone_preference(user: User) -> str | None:
+    prefs = user.preferences or {}
+    sp = prefs.get("sentiment_preference")
+    if isinstance(sp, str):
+        x = sp.strip().lower()
+        if x in ("any", "all", "mixed", ""):
+            pass
+        elif x in ("positive", "neutral", "negative", "positive_or_neutral"):
+            return x
+    return user.tone_preference
+
+
+def _preferred_category_slugs(user: User) -> set[str]:
+    prefs = user.preferences or {}
+    raw = prefs.get("preferred_categories")
+    if not isinstance(raw, list):
+        return set()
+    return {str(x).strip().lower() for x in raw if isinstance(x, str) and str(x).strip()}
 
 
 def _sentiment_match(user_tone: str | None, article_sentiment: str | None) -> float:
@@ -109,7 +130,7 @@ async def ensure_user_profile(db: AsyncSession, user: User) -> None:
         await db.execute(
             select(UserEvent.article_id)
             .where(UserEvent.user_external_id == user.external_id)
-            .where(UserEvent.event_type.in_(["click", "save", "dwell", "share"]))
+            .where(UserEvent.event_type.in_(["click", "save", "dwell", "share", "like"]))
             .order_by(UserEvent.created_at.desc())
             .limit(50)
         )
@@ -128,7 +149,7 @@ async def ensure_user_profile(db: AsyncSession, user: User) -> None:
         return
     profile = np.mean(mat, axis=0)
     user.profile_embedding = profile.tolist()
-    user.profile_updated_at = datetime.utcnow()
+    user.profile_updated_at = datetime.now(timezone.utc)
     await db.commit()
 
 
@@ -147,7 +168,10 @@ async def recommend_for_user(db: AsyncSession, user_external_id: str, limit: int
     # Candidates: recent articles.
     candidates = (
         await db.execute(
-            select(Article).order_by(Article.published_at.desc().nullslast(), Article.ingested_at.desc()).limit(400)
+            select(Article)
+            .options(selectinload(Article.category_primary))
+            .order_by(Article.published_at.desc().nullslast(), Article.ingested_at.desc())
+            .limit(400)
         )
     ).scalars().all()
 
@@ -167,6 +191,9 @@ async def recommend_for_user(db: AsyncSession, user_external_id: str, limit: int
     arm = _sample_arm(bandit.arms)
     w = arm.get("w") or {}
 
+    pref_cats = _preferred_category_slugs(user)
+    tone_pref = effective_tone_preference(user)
+
     scored: list[tuple[float, Article]] = []
     for a in candidates:
         age = _age_hours(a.published_at or a.ingested_at)
@@ -175,9 +202,14 @@ async def recommend_for_user(db: AsyncSession, user_external_id: str, limit: int
         pers = 0.0
         if user.profile_embedding and a.embedding:
             pers = _cosine(user.profile_embedding, a.embedding)
-        tone = _sentiment_match(user.tone_preference, a.sentiment_label)
+        tone = _sentiment_match(tone_pref, a.sentiment_label)
+        cat_boost = (
+            1.22
+            if pref_cats and a.category_primary and a.category_primary.slug.lower() in pref_cats
+            else 1.0
+        )
 
-        score = (
+        score = cat_boost * (
             float(w.get("recency", 0.35)) * rec
             + float(w.get("popularity", 0.25)) * pop
             + float(w.get("personal", 0.35)) * pers
@@ -202,7 +234,7 @@ async def recommend_for_user(db: AsyncSession, user_external_id: str, limit: int
     versions = {
         "bandit_arm": str(arm.get("name", "")),
         "embedding_model": settings.openai_model_embed if settings.openai_api_key else "",
-        "recs": "content_based_v1",
+        "recs": "content_based_v2",
     }
     return items, versions
 
@@ -211,13 +243,17 @@ async def _popular_feed(db: AsyncSession, user: User, limit: int) -> tuple[list[
     # Minimal fallback: most recent articles, lightly filtered by tone preference.
     rows = (
         await db.execute(
-            select(Article).order_by(Article.published_at.desc().nullslast(), Article.ingested_at.desc()).limit(300)
+            select(Article)
+            .options(selectinload(Article.category_primary))
+            .order_by(Article.published_at.desc().nullslast(), Article.ingested_at.desc())
+            .limit(300)
         )
     ).scalars().all()
     filtered = []
+    tone_pref = effective_tone_preference(user)
     for a in rows:
-        if user.tone_preference and a.sentiment_label:
-            if _sentiment_match(user.tone_preference, a.sentiment_label) < 0:
+        if tone_pref and a.sentiment_label:
+            if _sentiment_match(tone_pref, a.sentiment_label) < 0:
                 continue
         filtered.append(a)
         if len(filtered) >= limit:

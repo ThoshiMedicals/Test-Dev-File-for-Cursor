@@ -51,6 +51,11 @@ class Settings(BaseSettings):
 
     # CDN / edge: short cache for read-heavy JSON (Cloudflare respects Cache-Control).
     api_cache_control_seconds: int = 60
+    # Optional longer cache at the edge (s-maxage) for anonymous JSON; browsers still use max-age above.
+    cdn_s_maxage_seconds: int | None = None
+
+    # Firebase Cloud Messaging HTTP v1 — service account JSON path (project_id inside file).
+    firebase_credentials_path: str | None = None
 
 
 settings = Settings()

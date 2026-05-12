@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import auth_dep, db_dep
-from app.core.config import settings
 from app.models.article import Article, Category, Source
 from app.schemas.article import ArticleDetailOut, ArticleEnrichmentOut, ArticleIn, ArticleOut
 from app.schemas.common import Envelope, EnvelopeMeta
@@ -35,10 +34,11 @@ def _hash_article(url: str, title: str, body_text: str | None) -> str:
     return h.hexdigest()
 
 
+from app.services.http_cache import set_public_json_cache
+
+
 def _cache(response: Response) -> None:
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.api_cache_control_seconds}, stale-while-revalidate=120"
-    )
+    set_public_json_cache(response)
 
 
 def _encode_list_cursor(ingested_at: datetime, article_id: uuid.UUID) -> str:
