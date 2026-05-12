@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from celery import Celery
+from celery.schedules import schedule
 
 from app.core.config import settings
 
@@ -24,4 +27,12 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
 )
+
+if settings.news_sync_interval_minutes > 0:
+    celery_app.conf.beat_schedule = {
+        "sync-live-news-all": {
+            "task": "news.sync_all_live_news",
+            "schedule": schedule(run_every=timedelta(minutes=float(settings.news_sync_interval_minutes))),
+        },
+    }
 

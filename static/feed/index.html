@@ -26,12 +26,18 @@
     .summary{font-size:.88rem;color:var(--muted);}
     .full{display:none;font-size:.88rem;white-space:pre-wrap;}
     .full.on{display:block;}
+    .related-box{font-size:.82rem;color:var(--muted);border-top:1px solid var(--border);padding-top:.5rem;margin-top:.35rem;display:none;}
+    .related-box.on{display:block;}
+    .related-box a{color:var(--accent);}
     .actions{margin-top:auto;display:flex;flex-wrap:wrap;gap:.4rem;padding-top:.5rem;}
     .actions a,.actions button{font-size:.78rem;padding:.35rem .5rem;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--accent);text-decoration:none;cursor:pointer;}
     .tabs{display:flex;gap:.35rem;margin-bottom:1rem;flex-wrap:wrap;}
     .tabs button{background:var(--card);color:var(--text);}
     .tabs button.on{border-color:var(--accent);}
     #toast{position:fixed;bottom:1rem;right:1rem;background:#1e293b;border:1px solid var(--border);padding:.6rem .9rem;border-radius:10px;max-width:320px;display:none;}
+    footer.privacy{margin-top:2rem;padding:1rem 0;border-top:1px solid var(--border);font-size:.85rem;color:var(--muted);}
+    footer.privacy a{color:var(--accent);}
+    #sentinel{height:4px;margin-top:.5rem;}
   </style>
 </head>
 <body>
@@ -48,16 +54,22 @@
     <div class="tabs" id="tabs"></div>
     <div id="notifBox" class="meta" style="margin-bottom:.75rem;"></div>
     <div class="grid" id="grid"></div>
+    <div id="sentinel" aria-hidden="true"></div>
+    <footer class="privacy">
+      <p><strong>Privacy.</strong> The user id you enter is pseudonymous. Events (clicks, dwell, saves, shares) power recommendations and may be retained for a limited window. Waitlist email is encrypted when server keys are configured. See the <a id="privacyLink" href="#" target="_blank" rel="noopener">privacy notice (JSON)</a> for GDPR-oriented summary and retention.</p>
+    </footer>
   </main>
   <div id="toast"></div>
   <script>
     const TAB_DEFS = [
-      { id: "live", label: "Latest", path: "/v1/articles?limit=30" },
+      { id: "live", label: "Latest", path: null },
       { id: "trending", label: "Trending", path: "/v1/feed/trending?limit=20" },
       { id: "breaking", label: "Breaking", path: "/v1/feed/breaking?limit=12" },
       { id: "you", label: "For you", path: null },
     ];
     let activeTab = "live";
+    let latestCursor = null;
+    let latestLoading = false;
 
     function apiBase() {
       const m = document.querySelector('meta[name="api-base"]')?.getAttribute("content")?.trim() || "";
@@ -128,17 +140,101 @@
           <div class="meta"><span>${item.source || ""}</span><span>${(item.category_primary || "").toUpperCase()}</span><span class="sent ${sentimentClass(sent)}">${sent}</span></div>
           <div class="summary">${sum}</div>
           <div class="full ${mode === "full" ? "on" : ""}" data-full>${body ? body : "<em>Full text not loaded — use Open or switch to summaries.</em>"}</div>
+          <div class="related-box" data-related-box="${id}"></div>
           <div class="actions">
             <button type="button" data-dwell="${id}">Open article</button>
             <button type="button" data-save="${id}">Save</button>
+            <button type="button" data-related="${id}">People also read…</button>
             ${shareBtns}
           </div>
         </div>
       </article>`;
     }
 
+    function appendCards(items) {
+      const grid = document.getElementById("grid");
+      const html = items.map(cardHtml).join("");
+      grid.insertAdjacentHTML("beforeend", html);
+    }
+
+    function wireGrid(uid) {
+      const grid = document.getElementById("grid");
+      grid.onclick = async (ev) => {
+        const t = ev.target;
+        if (!(t instanceof HTMLElement)) return;
+        const openA = t.closest("[data-open]");
+        if (openA && openA.getAttribute("data-open")) {
+          const id = openA.getAttribute("data-open");
+          if (!uid || !id) return;
+          try {
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "click", meta: {} }]);
+          } catch (_) {}
+          return;
+        }
+        const dwell = t.closest("[data-dwell]");
+        if (dwell) {
+          const id = dwell.getAttribute("data-dwell");
+          if (!uid || !id) { toast("Set user id to track engagement."); return; }
+          try {
+            const d = await apiGet("/v1/articles/" + id + "?full=true");
+            const body = (d.data && d.data.body_text) || "";
+            const card = dwell.closest(".card");
+            const full = card && card.querySelector("[data-full]");
+            if (full) {
+              full.textContent = body || "(No body stored yet)";
+              full.classList.add("on");
+            }
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "dwell", value: 25, meta: { source: "feed_ui" } }]);
+          } catch (e) { toast(String(e.message || e)); }
+          return;
+        }
+        const save = t.closest("[data-save]");
+        if (save) {
+          const id = save.getAttribute("data-save");
+          if (!uid || !id) { toast("Set user id to track engagement."); return; }
+          try {
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "save", meta: {} }]);
+            toast("Saved");
+          } catch (e) { toast(String(e.message || e)); }
+          return;
+        }
+        const rel = t.closest("[data-related]");
+        if (rel) {
+          const id = rel.getAttribute("data-related");
+          if (!id) return;
+          const box = document.querySelector("[data-related-box=\"" + id + "\"]");
+          if (!box) return;
+          box.classList.add("on");
+          box.textContent = "Loading…";
+            try {
+            const j = await apiGet("/v1/articles/" + id + "/related?limit=5");
+            const rows = j.data || [];
+            if (!rows.length) { box.innerHTML = "<em>No collaborative signal yet — read and save more articles.</em>"; return; }
+            function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\"/g, "&quot;"); }
+            function escAttr(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/\"/g, "&quot;"); }
+            box.innerHTML = "<strong>People who read this also engaged with:</strong><br/>" +
+              rows.map((r) => "<a href=\"" + escAttr(r.url) + "\" target=\"_blank\" rel=\"noopener\">" + esc(r.title || "") + "</a>").join("<br/>");
+          } catch (e) {
+            box.textContent = String(e.message || e);
+          }
+          return;
+        }
+        const shareA = t.closest("a[data-platform]");
+        if (shareA) {
+          const id = shareA.getAttribute("data-aid");
+          const platform = shareA.getAttribute("data-platform");
+          if (!uid || !id) return;
+          try {
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "share", meta: { platform } }]);
+          } catch (_) {}
+        }
+      };
+    }
+
     async function load() {
       const uid = document.getElementById("userId").value.trim();
+      latestCursor = null;
+      latestLoading = false;
       try {
         let items = [];
         const tab = TAB_DEFS.find((t) => t.id === activeTab);
@@ -170,62 +266,38 @@
               };
             } catch (_) {}
           }
+        } else if (tab.id === "live") {
+          const j = await apiGet("/v1/articles?limit=12");
+          items = j.data || [];
+          latestCursor = (j.meta && j.meta.next_cursor) || null;
         } else {
           const j = await apiGet(tab.path);
           items = j.data || [];
         }
-        document.getElementById("grid").innerHTML = items.map(cardHtml).join("") || "<p>No articles yet. Run NewsAPI sync from the API.</p>";
+        document.getElementById("grid").innerHTML = items.length
+          ? items.map(cardHtml).join("")
+          : "<p>No articles yet. Run NewsAPI / Currents sync from the API.</p>";
         wireGrid(uid);
       } catch (e) {
         toast(String(e.message || e));
       }
     }
 
-    function wireGrid(uid) {
-      document.querySelectorAll("[data-open]").forEach((a) => {
-        a.addEventListener("click", async (ev) => {
-          const id = a.getAttribute("data-open");
-          if (!uid || !id) return;
-          try {
-            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "click", meta: {} }]);
-          } catch (_) {}
-        });
-      });
-      document.querySelectorAll("[data-dwell]").forEach((b) => {
-        b.addEventListener("click", async () => {
-          const id = b.getAttribute("data-dwell");
-          if (!uid || !id) { toast("Set user id to track engagement."); return; }
-          try {
-            const d = await apiGet("/v1/articles/" + id + "?full=true");
-            const body = (d.data && d.data.body_text) || "";
-            const card = b.closest(".card");
-            const full = card.querySelector("[data-full]");
-            full.textContent = body || "(No body stored yet)";
-            full.classList.add("on");
-            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "dwell", value: 25, meta: { source: "feed_ui" } }]);
-          } catch (e) { toast(String(e.message || e)); }
-        });
-      });
-      document.querySelectorAll("[data-save]").forEach((b) => {
-        b.addEventListener("click", async () => {
-          const id = b.getAttribute("data-save");
-          if (!uid || !id) { toast("Set user id to track engagement."); return; }
-          try {
-            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "save", meta: {} }]);
-            toast("Saved");
-          } catch (e) { toast(String(e.message || e)); }
-        });
-      });
-      document.querySelectorAll(".actions a[data-platform]").forEach((a) => {
-        a.addEventListener("click", async () => {
-          const id = a.getAttribute("data-aid");
-          const platform = a.getAttribute("data-platform");
-          if (!uid || !id) return;
-          try {
-            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "share", meta: { platform } }]);
-          } catch (_) {}
-        });
-      });
+    async function loadMoreLatest() {
+      if (activeTab !== "live" || !latestCursor || latestLoading) return;
+      latestLoading = true;
+      const uid = document.getElementById("userId").value.trim();
+      try {
+        const j = await apiGet("/v1/articles?limit=12&cursor=" + encodeURIComponent(latestCursor));
+        const more = j.data || [];
+        latestCursor = (j.meta && j.meta.next_cursor) || null;
+        if (more.length) appendCards(more);
+      } catch (e) {
+        toast(String(e.message || e));
+      } finally {
+        latestLoading = false;
+        wireGrid(uid);
+      }
     }
 
     async function loadNotifs() {
@@ -240,10 +312,19 @@
       } catch (e) { toast(String(e.message || e)); }
     }
 
+    const obs = new IntersectionObserver((entries) => {
+      if (entries[0] && entries[0].isIntersecting) loadMoreLatest();
+    }, { root: null, rootMargin: "240px", threshold: 0 });
+
     document.getElementById("btnLoad").addEventListener("click", load);
     document.getElementById("btnNotif").addEventListener("click", loadNotifs);
     document.getElementById("viewMode").addEventListener("change", load);
+    document.getElementById("privacyLink").href = apiBase() + "/v1/legal/privacy";
+    document.getElementById("apiBase").addEventListener("change", () => {
+      document.getElementById("privacyLink").href = apiBase() + "/v1/legal/privacy";
+    });
     renderTabs();
+    obs.observe(document.getElementById("sentinel"));
   </script>
 </body>
 </html>

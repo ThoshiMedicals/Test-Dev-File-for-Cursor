@@ -1,24 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 import httpx
 from dateutil import parser as date_parser
 
 from app.core.config import settings
-
-
-@dataclass
-class FetchedArticle:
-    url: str
-    title: str
-    lead_text: str | None
-    image_url: str | None
-    source_name: str | None
-    published_at: datetime | None
-    author: str | None
+from app.schemas.fetched_article import FetchedArticle
 
 
 async def fetch_top_headlines(*, country: str | None = None, page_size: int | None = None) -> list[FetchedArticle]:

@@ -1,67 +1,71 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-from datetime import datetime
 
 from celery import shared_task
-from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.db import SessionLocal
-from app.models.article import Article, Source
+from app.schemas.fetched_article import FetchedArticle
+from app.services.currents_api import fetch_currents_latest
+from app.services.live_news_ingest import ingest_fetched_articles
 from app.services.newsapi import fetch_top_headlines
-from workers.tasks.nlp import enrich_article
-
-
-def _hash_article(url: str, title: str, body_text: str | None) -> str:
-    h = hashlib.sha256()
-    h.update(url.encode("utf-8"))
-    h.update(b"\n")
-    h.update(title.encode("utf-8"))
-    if body_text:
-        h.update(b"\n")
-        h.update(body_text.encode("utf-8"))
-    return h.hexdigest()
 
 
 @shared_task(name="news.sync_newsapi_headlines")
 def sync_newsapi_headlines(country: str | None = None) -> dict:
     async def _run() -> dict:
         items = await fetch_top_headlines(country=country)
-        created = 0
         async with SessionLocal() as db:
-            for it in items:
-                existing = (await db.execute(select(Article).where(Article.url == it.url))).scalar_one_or_none()
-                if existing:
-                    continue
-                raw_hash = _hash_article(it.url, it.title, it.lead_text)
-                dup = (await db.execute(select(Article).where(Article.raw_hash == raw_hash))).scalar_one_or_none()
-                if dup:
-                    continue
-                source_obj = None
-                if it.source_name:
-                    source_obj = (await db.execute(select(Source).where(Source.name == it.source_name))).scalar_one_or_none()
-                    if source_obj is None:
-                        source_obj = Source(name=it.source_name)
-                        db.add(source_obj)
-                        await db.flush()
-                article = Article(
-                    url=it.url,
-                    raw_hash=raw_hash,
-                    title=it.title,
-                    lead_text=it.lead_text,
-                    body_text=None,
-                    author=it.author,
-                    published_at=it.published_at,
-                    ingested_at=datetime.utcnow(),
-                    source=source_obj,
-                    image_url=it.image_url,
-                )
-                db.add(article)
-                await db.commit()
-                await db.refresh(article)
-                enrich_article.delay(str(article.id))
-                created += 1
-        return {"fetched": len(items), "created": created}
+            return await ingest_fetched_articles(db, items)
+
+    return asyncio.run(_run())
+
+
+@shared_task(name="news.sync_currents_latest")
+def sync_currents_latest() -> dict:
+    async def _run() -> dict:
+        items = await fetch_currents_latest()
+        async with SessionLocal() as db:
+            return await ingest_fetched_articles(db, items)
+
+    return asyncio.run(_run())
+
+
+@shared_task(name="news.sync_all_live_news")
+def sync_all_live_news(country: str | None = None) -> dict:
+    """Fetch from all configured providers, merge by URL, ingest once."""
+
+    async def _run() -> dict:
+        merged: dict[str, FetchedArticle] = {}
+        errors: list[str] = []
+
+        if settings.news_api_key:
+            try:
+                for it in await fetch_top_headlines(country=country):
+                    merged[it.url] = it
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"newsapi:{e!s}")
+
+        if settings.currents_api_key:
+            try:
+                for it in await fetch_currents_latest():
+                    merged.setdefault(it.url, it)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"currents:{e!s}")
+
+        items = list(merged.values())
+        if not items:
+            return {
+                "fetched": 0,
+                "created": 0,
+                "errors": errors,
+                "message": "No articles fetched (missing API keys or upstream errors).",
+            }
+
+        async with SessionLocal() as db:
+            stats = await ingest_fetched_articles(db, items)
+        stats["errors"] = errors
+        return stats
 
     return asyncio.run(_run())

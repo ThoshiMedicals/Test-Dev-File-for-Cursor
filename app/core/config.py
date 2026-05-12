@@ -35,6 +35,20 @@ class Settings(BaseSettings):
     news_api_country: str = "us"
     news_api_page_size: int = 40
 
+    # Currents API (https://currentsapi.services/) — Authorization header API key
+    currents_api_key: str | None = None
+    currents_language: str = "en"
+
+    # Celery Beat: run `news.sync_all_live_news` on this interval (minutes). 0 = disabled.
+    news_sync_interval_minutes: int = 0
+
+    # Optional outbound email for alerts (SMTP). Leave host empty to skip sends.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+
     # CDN / edge: short cache for read-heavy JSON (Cloudflare respects Cache-Control).
     api_cache_control_seconds: int = 60
 

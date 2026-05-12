@@ -32,10 +32,11 @@ def create_app() -> FastAPI:
         return FileResponse(feed_page, media_type="text/html; charset=utf-8")
 
     @app.get("/")
-    async def coming_soon_root() -> FileResponse:
-        if not coming_soon.is_file():
-            raise HTTPException(status_code=404, detail="Coming Soon page not found.")
-        return FileResponse(coming_soon, media_type="text/html; charset=utf-8")
+    async def root_feed() -> FileResponse:
+        """Homepage: live news feed (Coming Soon waitlist stays at `/coming-soon`)."""
+        if not feed_page.is_file():
+            raise HTTPException(status_code=404, detail="News feed UI not found.")
+        return FileResponse(feed_page, media_type="text/html; charset=utf-8")
 
     @app.get("/coming-soon")
     async def coming_soon_page() -> FileResponse:
