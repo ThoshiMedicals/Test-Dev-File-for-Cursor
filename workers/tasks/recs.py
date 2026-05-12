@@ -21,7 +21,7 @@ def train_als(factors: int = 64, iterations: int = 20, regularization: float = 0
             rows = (
                 await db.execute(
                     select(UserEvent.user_external_id, UserEvent.article_id, UserEvent.event_type)
-                    .where(UserEvent.event_type.in_(["click", "save", "dwell"]))
+                    .where(UserEvent.event_type.in_(["click", "save", "dwell", "share", "comment"]))
                 )
             ).all()
 
@@ -42,6 +42,10 @@ def train_als(factors: int = 64, iterations: int = 20, regularization: float = 0
                 w = 3.0
             elif et == "dwell":
                 w = 1.5
+            elif et == "share":
+                w = 2.5
+            elif et == "comment":
+                w = 2.0
             row_idx.append(u_index[u])
             col_idx.append(i_index[str(aid)])
             data.append(w)

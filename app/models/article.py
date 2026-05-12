@@ -48,6 +48,7 @@ class Article(Base):
 
     body_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     lead_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
     category_primary_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True, index=True

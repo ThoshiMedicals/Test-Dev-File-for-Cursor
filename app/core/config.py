@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     waitlist_fernet_key: str | None = None
     waitlist_hmac_secret: str | None = None
 
+    # Live headlines (https://newsapi.org/)
+    news_api_key: str | None = None
+    news_api_country: str = "us"
+    news_api_page_size: int = 40
+
+    # CDN / edge: short cache for read-heavy JSON (Cloudflare respects Cache-Control).
+    api_cache_control_seconds: int = 60
+
 
 settings = Settings()
 

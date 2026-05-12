@@ -35,3 +35,22 @@ class RecommendationsOut(BaseModel):
     items: list[dict] = Field(default_factory=list)
     model_versions: dict[str, str] = Field(default_factory=dict)
 
+
+class NotificationOut(BaseModel):
+    id: uuid.UUID
+    title: str
+    body: str | None
+    topic_slug: str | None
+    severity: str
+    article_id: uuid.UUID | None
+    read_at: datetime | None
+    created_at: datetime
+
+
+class NotificationCreateIn(BaseModel):
+    title: str = Field(..., max_length=512)
+    body: str | None = Field(default=None, max_length=8000)
+    topic_slug: str | None = Field(default=None, max_length=64)
+    severity: str = Field(default="info", max_length=32)
+    article_id: uuid.UUID | None = None
+

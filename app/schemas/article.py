@@ -15,6 +15,7 @@ class ArticleIn(BaseModel):
     source: str | None = None
     published_at: datetime | None = None
     language: str | None = None
+    image_url: AnyHttpUrl | None = None
 
 
 class ArticleOut(BaseModel):
@@ -26,6 +27,7 @@ class ArticleOut(BaseModel):
     published_at: datetime | None
     ingested_at: datetime
     language: str | None
+    image_url: str | None = None
 
     category_primary: str | None = None
     category_secondary: list[str] = Field(default_factory=list)
@@ -36,6 +38,11 @@ class ArticleOut(BaseModel):
 
     summary_short: str | None = None
     summary_long: str | None = None
+
+
+class ArticleDetailOut(ArticleOut):
+    body_text: str | None = None
+    share_links: dict[str, str] = Field(default_factory=dict)
 
 
 class ArticleEnrichmentOut(BaseModel):

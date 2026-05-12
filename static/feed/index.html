@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="api-base" content="" />
+  <title>Live News — Intelligent Feed</title>
+  <style>
+    :root { --bg:#0b0f14; --card:#121826; --text:#e8edf7; --muted:#94a3b8; --accent:#38bdf8; --pos:#34d399; --neg:#f87171; --neu:#94a3b8; --border:rgba(148,163,184,.2);}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;line-height:1.45;}
+    header{padding:1rem 1.25rem;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;position:sticky;top:0;background:rgba(11,15,20,.92);backdrop-filter:blur(8px);z-index:10;}
+    header input,header select,header button{padding:.45rem .6rem;border-radius:8px;border:1px solid var(--border);background:#0b0f14;color:var(--text);}
+    button.primary{background:linear-gradient(135deg,var(--accent),#a78bfa);color:#0b0f14;font-weight:700;border:none;cursor:pointer;}
+    main{max-width:1100px;margin:0 auto;padding:1rem;}
+    .grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));}
+    article.card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;}
+    article.card img{width:100%;height:160px;object-fit:cover;background:#1e293b;}
+    .body{padding:.75rem .9rem 1rem;flex:1;display:flex;flex-direction:column;gap:.4rem;}
+    .body h2{margin:0;font-size:1.05rem;line-height:1.25;}
+    .meta{font-size:.8rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;}
+    .sent{padding:.12rem .45rem;border-radius:999px;font-size:.72rem;font-weight:600;}
+    .sent.positive{background:rgba(52,211,153,.15);color:var(--pos);}
+    .sent.negative{background:rgba(248,113,113,.15);color:var(--neg);}
+    .sent.neutral{background:rgba(148,163,184,.15);color:var(--neu);}
+    .summary{font-size:.88rem;color:var(--muted);}
+    .full{display:none;font-size:.88rem;white-space:pre-wrap;}
+    .full.on{display:block;}
+    .actions{margin-top:auto;display:flex;flex-wrap:wrap;gap:.4rem;padding-top:.5rem;}
+    .actions a,.actions button{font-size:.78rem;padding:.35rem .5rem;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--accent);text-decoration:none;cursor:pointer;}
+    .tabs{display:flex;gap:.35rem;margin-bottom:1rem;flex-wrap:wrap;}
+    .tabs button{background:var(--card);color:var(--text);}
+    .tabs button.on{border-color:var(--accent);}
+    #toast{position:fixed;bottom:1rem;right:1rem;background:#1e293b;border:1px solid var(--border);padding:.6rem .9rem;border-radius:10px;max-width:320px;display:none;}
+  </style>
+</head>
+<body>
+  <header>
+    <strong>News feed</strong>
+    <input id="apiBase" placeholder="API base (empty = same origin)" style="min-width:200px" />
+    <input id="apiKey" type="password" placeholder="X-API-KEY" style="min-width:140px" />
+    <input id="userId" placeholder="User id (for personalization)" style="min-width:160px" />
+    <select id="viewMode"><option value="summary">Summaries</option><option value="full">Full text</option></select>
+    <button class="primary" type="button" id="btnLoad">Load</button>
+    <button type="button" id="btnNotif">Refresh alerts</button>
+  </header>
+  <main>
+    <div class="tabs" id="tabs"></div>
+    <div id="notifBox" class="meta" style="margin-bottom:.75rem;"></div>
+    <div class="grid" id="grid"></div>
+  </main>
+  <div id="toast"></div>
+  <script>
+    const TAB_DEFS = [
+      { id: "live", label: "Latest", path: "/v1/articles?limit=30" },
+      { id: "trending", label: "Trending", path: "/v1/feed/trending?limit=20" },
+      { id: "breaking", label: "Breaking", path: "/v1/feed/breaking?limit=12" },
+      { id: "you", label: "For you", path: null },
+    ];
+    let activeTab = "live";
+
+    function apiBase() {
+      const m = document.querySelector('meta[name="api-base"]')?.getAttribute("content")?.trim() || "";
+      const inp = document.getElementById("apiBase").value.trim();
+      return (inp || m).replace(/\/+$/, "");
+    }
+    function headers() {
+      const h = { "Content-Type": "application/json" };
+      const k = document.getElementById("apiKey").value.trim();
+      if (k) h["X-API-KEY"] = k;
+      return h;
+    }
+    function toast(msg) {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.style.display = "block";
+      setTimeout(() => { t.style.display = "none"; }, 3500);
+    }
+    async function apiGet(path) {
+      const r = await fetch(apiBase() + path, { headers: headers() });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.detail || r.statusText);
+      return j;
+    }
+    async function apiPost(path, body) {
+      const r = await fetch(apiBase() + path, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.detail || r.statusText);
+      return j;
+    }
+
+    function renderTabs() {
+      const el = document.getElementById("tabs");
+      el.innerHTML = "";
+      TAB_DEFS.forEach((t) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = t.label;
+        b.className = t.id === activeTab ? "on" : "";
+        b.addEventListener("click", () => { activeTab = t.id; renderTabs(); load(); });
+        el.appendChild(b);
+      });
+    }
+
+    function sentimentClass(s) {
+      if (!s) return "neutral";
+      const x = String(s).toLowerCase();
+      if (x.includes("pos")) return "positive";
+      if (x.includes("neg")) return "negative";
+      return "neutral";
+    }
+
+    function cardHtml(item) {
+      const id = item.article_id;
+      const img = item.image_url ? `<img src="${item.image_url}" alt="" loading="lazy" onerror="this.style.display='none'" />` : `<div style="height:8px"></div>`;
+      const sent = item.sentiment_label || "neutral";
+      const sum = item.summary_short || item.summary_long || "";
+      const body = item.body_text || "";
+      const mode = document.getElementById("viewMode").value;
+      const links = item.share_links || {};
+      const shareBtns = ["twitter", "facebook", "linkedin"].map((p) =>
+        `<a href="${links[p] || "#"}" target="_blank" rel="noopener" data-platform="${p}" data-aid="${id}">${p}</a>`
+      ).join("");
+      return `<article class="card" data-id="${id}">
+        ${img}
+        <div class="body">
+          <h2><a href="${item.url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none" data-open="${id}">${item.title || "Untitled"}</a></h2>
+          <div class="meta"><span>${item.source || ""}</span><span>${(item.category_primary || "").toUpperCase()}</span><span class="sent ${sentimentClass(sent)}">${sent}</span></div>
+          <div class="summary">${sum}</div>
+          <div class="full ${mode === "full" ? "on" : ""}" data-full>${body ? body : "<em>Full text not loaded — use Open or switch to summaries.</em>"}</div>
+          <div class="actions">
+            <button type="button" data-dwell="${id}">Open article</button>
+            <button type="button" data-save="${id}">Save</button>
+            ${shareBtns}
+          </div>
+        </div>
+      </article>`;
+    }
+
+    async function load() {
+      const uid = document.getElementById("userId").value.trim();
+      try {
+        let items = [];
+        const tab = TAB_DEFS.find((t) => t.id === activeTab);
+        if (tab.id === "you") {
+          if (!uid) { toast("Set a user id for personalized feed."); return; }
+          const j = await apiGet("/v1/feed/personalized?user_external_id=" + encodeURIComponent(uid) + "&limit=24");
+          items = (j.data || []).map((row) => ({
+            article_id: row.article_id,
+            url: row.url,
+            title: row.title,
+            image_url: null,
+            summary_short: "",
+            sentiment_label: row.sentiment,
+            category_primary: row.category_primary,
+            source: "",
+            share_links: {},
+          }));
+          for (const it of items) {
+            try {
+              const d = await apiGet("/v1/articles/" + it.article_id + "?full=false");
+              const a = d.data || {};
+              Object.assign(it, { image_url: a.image_url, summary_short: a.summary_short, source: a.source });
+              const enc = encodeURIComponent(it.url);
+              const t = encodeURIComponent((it.title || "").slice(0, 200));
+              it.share_links = {
+                twitter: `https://twitter.com/intent/tweet?url=${enc}&text=${t}`,
+                facebook: `https://www.facebook.com/sharer/sharer.php?u=${enc}`,
+                linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${enc}`,
+              };
+            } catch (_) {}
+          }
+        } else {
+          const j = await apiGet(tab.path);
+          items = j.data || [];
+        }
+        document.getElementById("grid").innerHTML = items.map(cardHtml).join("") || "<p>No articles yet. Run NewsAPI sync from the API.</p>";
+        wireGrid(uid);
+      } catch (e) {
+        toast(String(e.message || e));
+      }
+    }
+
+    function wireGrid(uid) {
+      document.querySelectorAll("[data-open]").forEach((a) => {
+        a.addEventListener("click", async (ev) => {
+          const id = a.getAttribute("data-open");
+          if (!uid || !id) return;
+          try {
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "click", meta: {} }]);
+          } catch (_) {}
+        });
+      });
+      document.querySelectorAll("[data-dwell]").forEach((b) => {
+        b.addEventListener("click", async () => {
+          const id = b.getAttribute("data-dwell");
+          if (!uid || !id) { toast("Set user id to track engagement."); return; }
+          try {
+            const d = await apiGet("/v1/articles/" + id + "?full=true");
+            const body = (d.data && d.data.body_text) || "";
+            const card = b.closest(".card");
+            const full = card.querySelector("[data-full]");
+            full.textContent = body || "(No body stored yet)";
+            full.classList.add("on");
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "dwell", value: 25, meta: { source: "feed_ui" } }]);
+          } catch (e) { toast(String(e.message || e)); }
+        });
+      });
+      document.querySelectorAll("[data-save]").forEach((b) => {
+        b.addEventListener("click", async () => {
+          const id = b.getAttribute("data-save");
+          if (!uid || !id) { toast("Set user id to track engagement."); return; }
+          try {
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "save", meta: {} }]);
+            toast("Saved");
+          } catch (e) { toast(String(e.message || e)); }
+        });
+      });
+      document.querySelectorAll(".actions a[data-platform]").forEach((a) => {
+        a.addEventListener("click", async () => {
+          const id = a.getAttribute("data-aid");
+          const platform = a.getAttribute("data-platform");
+          if (!uid || !id) return;
+          try {
+            await apiPost("/v1/users/" + encodeURIComponent(uid) + "/events", [{ user_external_id: uid, article_id: id, event_type: "share", meta: { platform } }]);
+          } catch (_) {}
+        });
+      });
+    }
+
+    async function loadNotifs() {
+      const uid = document.getElementById("userId").value.trim();
+      if (!uid) { toast("Set user id"); return; }
+      try {
+        const j = await apiGet("/v1/users/" + encodeURIComponent(uid) + "/notifications?unread_only=true&limit=5");
+        const arr = j.data || [];
+        document.getElementById("notifBox").innerHTML = arr.length
+          ? "<strong>Alerts:</strong> " + arr.map((n) => n.title).join(" · ")
+          : "<span style='color:var(--muted)'>No unread alerts</span>";
+      } catch (e) { toast(String(e.message || e)); }
+    }
+
+    document.getElementById("btnLoad").addEventListener("click", load);
+    document.getElementById("btnNotif").addEventListener("click", loadNotifs);
+    document.getElementById("viewMode").addEventListener("change", load);
+    renderTabs();
+  </script>
+</body>
+</html>

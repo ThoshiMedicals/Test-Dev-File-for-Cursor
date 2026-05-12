@@ -7,13 +7,13 @@ import random
 from datetime import datetime, timezone
 
 import numpy as np
-import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.article import Article
 from app.models.user import BanditState, User, UserEvent
+from app.services.feed_intel import engagement_hotness
 from app.services.llm import embed_text
 
 ALS_ARTIFACT_PATH = os.path.join("ml", "artifacts", "als.pkl")
@@ -109,7 +109,7 @@ async def ensure_user_profile(db: AsyncSession, user: User) -> None:
         await db.execute(
             select(UserEvent.article_id)
             .where(UserEvent.user_external_id == user.external_id)
-            .where(UserEvent.event_type.in_(["click", "save", "dwell"]))
+            .where(UserEvent.event_type.in_(["click", "save", "dwell", "share"]))
             .order_by(UserEvent.created_at.desc())
             .limit(50)
         )
@@ -161,16 +161,7 @@ async def recommend_for_user(db: AsyncSession, user_external_id: str, limit: int
 
     await ensure_user_profile(db, user)
 
-    # Popularity: clicks in last 24h.
-    clicks = (
-        await db.execute(
-            select(UserEvent.article_id, func.count(UserEvent.id))
-            .where(UserEvent.event_type == "click")
-            .where(UserEvent.created_at > func.now() - sa.text("interval '24 hours'"))  # type: ignore[name-defined]
-            .group_by(UserEvent.article_id)
-        )
-    ).all()
-    click_map = {str(aid): int(c) for (aid, c) in clicks}
+    hot = await engagement_hotness(db, hours=24)
 
     bandit = await _get_or_create_bandit(db, user_external_id=user_external_id)
     arm = _sample_arm(bandit.arms)
@@ -180,7 +171,7 @@ async def recommend_for_user(db: AsyncSession, user_external_id: str, limit: int
     for a in candidates:
         age = _age_hours(a.published_at or a.ingested_at)
         rec = _recency_score(age)
-        pop = math.log1p(click_map.get(str(a.id), 0))
+        pop = math.log1p(hot.get(str(a.id), 0.0))
         pers = 0.0
         if user.profile_embedding and a.embedding:
             pers = _cosine(user.profile_embedding, a.embedding)

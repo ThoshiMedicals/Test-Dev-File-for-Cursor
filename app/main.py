@@ -20,9 +20,16 @@ def create_app() -> FastAPI:
 
     static_root = Path(__file__).resolve().parent.parent / "static"
     coming_soon = static_root / "coming-soon" / "index.html"
+    feed_page = static_root / "feed" / "index.html"
 
     if static_root.exists():
         app.mount("/static", StaticFiles(directory=str(static_root)), name="static")
+
+    @app.get("/news")
+    async def news_feed_page() -> FileResponse:
+        if not feed_page.is_file():
+            raise HTTPException(status_code=404, detail="News feed UI not found.")
+        return FileResponse(feed_page, media_type="text/html; charset=utf-8")
 
     @app.get("/")
     async def coming_soon_root() -> FileResponse:
