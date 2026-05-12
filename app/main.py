@@ -20,7 +20,7 @@ def create_app() -> FastAPI:
 
     static_root = Path(__file__).resolve().parent.parent / "static"
     coming_soon = static_root / "coming-soon" / "index.html"
-    feed_page = static_root / "feed" / "index.html"
+    feed_page = static_root / "index.html"
     profile_page = static_root / "profile" / "index.html"
 
     if static_root.exists():

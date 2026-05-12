@@ -1,4 +1,4 @@
-# Cloudflare Workers — static "Coming Soon" UI (FastAPI still runs elsewhere, e.g. Docker/VPS).
+# Cloudflare Workers — static assets at site root; `index.html` is the live news feed UI.
 # Worker name: letters, numbers, and hyphens only (no underscores).
 name = "test-dev-file-for-cursor"
 compatibility_date = "2024-11-12"
