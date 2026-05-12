@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.models.base import Base
 from app.models.article import Article, Category, Source  # noqa: F401
 from app.models.user import BanditState, User, UserEvent  # noqa: F401
+from app.models.waitlist import WaitlistInteraction, WaitlistSubscriber  # noqa: F401
 
 
 config = context.config

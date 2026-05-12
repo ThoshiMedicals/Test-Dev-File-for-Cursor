@@ -12,6 +12,7 @@ celery_app = Celery(
         "workers.tasks.ingest",
         "workers.tasks.nlp",
         "workers.tasks.recs",
+        "workers.tasks.waitlist",
         "workers.tasks.maintenance",
     ],
 )

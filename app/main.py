@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.router import api_router
@@ -12,6 +17,33 @@ def create_app() -> FastAPI:
     configure_logging(settings.environment)
     app = FastAPI(title=settings.app_name)
     app.include_router(api_router)
+
+    static_root = Path(__file__).resolve().parent.parent / "static"
+    coming_soon = static_root / "coming-soon" / "index.html"
+
+    if static_root.exists():
+        app.mount("/static", StaticFiles(directory=str(static_root)), name="static")
+
+    @app.get("/")
+    async def coming_soon_root() -> FileResponse:
+        if not coming_soon.is_file():
+            raise HTTPException(status_code=404, detail="Coming Soon page not found.")
+        return FileResponse(coming_soon, media_type="text/html; charset=utf-8")
+
+    @app.get("/coming-soon")
+    async def coming_soon_page() -> FileResponse:
+        if not coming_soon.is_file():
+            raise HTTPException(status_code=404, detail="Coming Soon page not found.")
+        return FileResponse(coming_soon, media_type="text/html; charset=utf-8")
+
+    if settings.environment == "dev":
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False, endpoint="/metrics")
 

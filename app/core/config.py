@@ -26,6 +26,10 @@ class Settings(BaseSettings):
 
     retention_days_events: int = 90
 
+    # Waitlist / Coming Soon — use Fernet key from `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+    waitlist_fernet_key: str | None = None
+    waitlist_hmac_secret: str | None = None
+
 
 settings = Settings()
 

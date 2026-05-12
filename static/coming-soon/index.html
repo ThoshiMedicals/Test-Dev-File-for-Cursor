@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Coming Soon — News Platform</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121826;
+      --text: #e8edf7;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent2: #a78bfa;
+      --ok: #34d399;
+      --err: #f87171;
+      --border: rgba(148, 163, 184, 0.2);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, rgba(56, 189, 248, 0.12), transparent),
+                  radial-gradient(900px 500px at 90% 10%, rgba(167, 139, 250, 0.12), transparent),
+                  var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+    h1 { font-size: clamp(2rem, 4vw, 2.75rem); letter-spacing: -0.02em; margin: 0 0 0.5rem; }
+    .sub { color: var(--muted); margin: 0 0 2rem; font-size: 1.05rem; }
+    .card {
+      background: linear-gradient(180deg, rgba(18, 24, 38, 0.95), rgba(18, 24, 38, 0.85));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+    }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.35rem; }
+    input[type="email"], textarea {
+      width: 100%;
+      padding: 0.75rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(11, 15, 20, 0.6);
+      color: var(--text);
+      font-size: 1rem;
+    }
+    textarea { min-height: 100px; resize: vertical; }
+    .interests { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+    .chip {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .chip:hover { border-color: rgba(56, 189, 248, 0.45); color: var(--text); }
+    .chip.on { background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.55); color: var(--text); }
+    .row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 1rem; }
+    button.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #0b0f14;
+      border: none;
+      border-radius: 12px;
+      padding: 0.75rem 1.25rem;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button.primary:disabled { opacity: 0.55; cursor: not-allowed; }
+    .msg { margin-top: 1rem; font-size: 0.95rem; }
+    .msg.ok { color: var(--ok); }
+    .msg.err { color: var(--err); }
+    .reactions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    .reactions button {
+      font-size: 1.35rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(11, 15, 20, 0.5);
+      cursor: pointer;
+      padding: 0.35rem 0.55rem;
+    }
+    .social { margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+    .social a {
+      color: var(--accent);
+      margin-right: 1rem;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .social a:hover { text-decoration: underline; }
+    .fine { font-size: 0.8rem; color: var(--muted); margin-top: 1rem; }
+    .consent { display: flex; gap: 0.5rem; align-items: flex-start; margin-top: 1rem; color: var(--muted); font-size: 0.9rem; }
+    .consent input { margin-top: 0.2rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Something big is loading.</h1>
+    <p class="sub">Be first in line for launch updates. Tell us what you care about — we will tune your experience and recommendations when we go live.</p>
+
+    <div class="card">
+      <form id="form">
+        <label for="email">Email for updates</label>
+        <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@example.com" />
+
+        <label>Interests (pick any)</label>
+        <div class="interests" id="interests" aria-label="Interests"></div>
+
+        <label for="feedback">Quick feedback (optional)</label>
+        <textarea id="feedback" maxlength="4000" placeholder="What would make this worth your inbox?"></textarea>
+
+        <div>
+          <span class="fine">How does this page feel?</span>
+          <div class="reactions" id="reactions" aria-label="Reactions"></div>
+        </div>
+
+        <div class="social">
+          <span class="fine">Share the wait (tracked as anonymous engagement):</span><br /><br />
+          <a href="#" data-platform="twitter" class="social-link">Twitter / X</a>
+          <a href="#" data-platform="linkedin" class="social-link">LinkedIn</a>
+          <a href="#" data-platform="reddit" class="social-link">Reddit</a>
+        </div>
+
+        <div class="consent">
+          <input type="checkbox" id="consent" checked />
+          <label for="consent" style="margin:0;color:inherit;font-size:inherit;">I agree to receive product and launch emails. You can unsubscribe anytime.</label>
+        </div>
+
+        <div class="row">
+          <button class="primary" type="submit" id="submit">Notify me</button>
+        </div>
+        <div id="msg" class="msg" role="status"></div>
+      </form>
+    </div>
+    <p class="fine">We store your email encrypted at rest. Session activity helps us understand sentiment and interests before launch.</p>
+  </div>
+
+  <script>
+    (function () {
+      const API = "";
+      const INTERESTS = [];
+      const selected = new Set();
+
+      function sessionId() {
+        const k = "waitlist_session_id";
+        let id = localStorage.getItem(k);
+        if (!id) {
+          id = crypto.randomUUID();
+          localStorage.setItem(k, id);
+        }
+        return id;
+      }
+
+      async function postJson(path, body) {
+        const r = await fetch(API + path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || r.statusText || "Request failed");
+        return data;
+      }
+
+      async function postInteractions(events) {
+        try {
+          await postJson("/v1/waitlist/interactions", events);
+        } catch (e) { console.warn(e); }
+      }
+
+      async function loadConfig() {
+        const r = await fetch(API + "/v1/waitlist/config");
+        const j = await r.json();
+        const list = (j.data && j.data.interests) ? j.data.interests : [];
+        INTERESTS.push.apply(INTERESTS, list);
+        const box = document.getElementById("interests");
+        box.innerHTML = "";
+        INTERESTS.forEach((slug) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "chip";
+          b.textContent = slug.replace(/-/g, " ");
+          b.dataset.slug = slug;
+          b.addEventListener("click", () => {
+            if (selected.has(slug)) { selected.delete(slug); b.classList.remove("on"); }
+            else { selected.add(slug); b.classList.add("on"); }
+            postInteractions([{ session_id: sessionId(), event_type: "interest_toggle", meta: { interest: slug, selected: selected.has(slug) } }]);
+          });
+          box.appendChild(b);
+        });
+      }
+
+      const reactionEmojis = ["😊", "😐", "😞"];
+      const rx = document.getElementById("reactions");
+      reactionEmojis.forEach((emo) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = emo;
+        b.title = "Reaction";
+        b.addEventListener("click", () => {
+          postInteractions([{ session_id: sessionId(), event_type: "reaction", meta: { emoji: emo, context: "coming_soon_page" } }]);
+        });
+        rx.appendChild(b);
+      });
+
+      document.querySelectorAll(".social-link").forEach((a) => {
+        a.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          const platform = a.getAttribute("data-platform") || "unknown";
+          postInteractions([{ session_id: sessionId(), event_type: "social_click", meta: { platform, href: a.href } }]);
+          alert("Thanks — when we wire real profiles, this will open " + platform + ".");
+        });
+      });
+
+      const fb = document.getElementById("feedback");
+      fb.addEventListener("blur", () => {
+        const text = (fb.value || "").trim();
+        if (!text) return;
+        postInteractions([{ session_id: sessionId(), event_type: "feedback_blur", meta: { text, length: text.length } }]);
+      });
+
+      document.getElementById("form").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const msg = document.getElementById("msg");
+        const btn = document.getElementById("submit");
+        msg.textContent = "";
+        msg.className = "msg";
+        btn.disabled = true;
+        try {
+          const payload = {
+            email: document.getElementById("email").value.trim(),
+            interests: Array.from(selected),
+            session_id: sessionId(),
+            optional_feedback: (document.getElementById("feedback").value || "").trim() || null,
+            consent_marketing: document.getElementById("consent").checked,
+          };
+          const res = await postJson("/v1/waitlist/subscribe", payload);
+          const d = res.data || {};
+          msg.classList.add(d.status === "already_subscribed" ? "ok" : "ok");
+          msg.textContent = d.message || "You are on the list.";
+          postInteractions([{ session_id: sessionId(), event_type: "subscribe_success", meta: { status: d.status } }]);
+        } catch (e) {
+          msg.classList.add("err");
+          msg.textContent = e.message || "Something went wrong.";
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      postInteractions([{ session_id: sessionId(), event_type: "page_view", meta: { path: "/coming-soon" } }]);
+      loadConfig().catch(() => {
+        document.getElementById("msg").className = "msg err";
+        document.getElementById("msg").textContent = "Could not load interest options. Is the API running?";
+      });
+    })();
+  </script>
+</body>
+</html>
