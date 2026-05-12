@@ -1,0 +1,7 @@
+# Cloudflare Workers — static "Coming Soon" UI (FastAPI still runs elsewhere, e.g. Docker/VPS).
+# Worker name: letters, numbers, and hyphens only (no underscores).
+name = "test-dev-file-for-cursor"
+compatibility_date = "2024-11-12"
+
+[assets]
+directory = "static"

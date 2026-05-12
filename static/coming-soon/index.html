@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- When the UI is hosted on Cloudflare static, set this to your FastAPI origin (no trailing slash), e.g. https://api.example.com -->
+  <meta name="api-base" content="" />
   <title>Coming Soon — News Platform</title>
   <style>
     :root {
@@ -142,7 +144,8 @@
 
   <script>
     (function () {
-      const API = "";
+      const raw = document.querySelector('meta[name="api-base"]')?.getAttribute("content") || "";
+      const API = raw.replace(/\/+$/, "");
       const INTERESTS = [];
       const selected = new Set();
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import selectors
+import sys
 from logging.config import fileConfig
 
 from alembic import context
@@ -57,7 +59,14 @@ async def run_migrations_online() -> None:
 
 
 def run_migrations_online_entrypoint() -> None:
-    asyncio.run(run_migrations_online())
+    # Windows defaults to ProactorEventLoop; async psycopg requires a selector-based loop.
+    if sys.platform == "win32":
+        asyncio.run(
+            run_migrations_online(),
+            loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()),
+        )
+    else:
+        asyncio.run(run_migrations_online())
 
 
 if context.is_offline_mode():
